@@ -82,15 +82,26 @@ pio.templates["ledger"] = go.layout.Template(layout=dict(
 pio.templates.default = "ledger"
 
 # ------------------------------------------------------------------ loading --
+HERE = Path(__file__).parent
+
+def find_csv(name: str):
+    """Find <name>.csv in data/, next to app.py, or anywhere in the repo
+    (any folder, any upper/lower case), however it was uploaded."""
+    for path in (DATA / f"{name}.csv", HERE / f"{name}.csv"):
+        if path.exists():
+            return path
+    for root in (HERE, HERE.parent):
+        for path in root.rglob("*"):
+            if path.is_file() and path.name.lower() == f"{name}.csv":
+                return path
+    return None
+
 @st.cache_data(ttl=3600)
 def load(name: str, dates=("date",)) -> pd.DataFrame:
-    # Look in data/ first, then next to app.py (in case the CSVs were
-    # uploaded to the top of the GitHub repository instead of data/).
-    for folder in (DATA, Path(__file__).parent):
-        path = folder / f"{name}.csv"
-        if path.exists():
-            return pd.read_csv(path, parse_dates=list(dates))
-    raise FileNotFoundError(name)
+    path = find_csv(name)
+    if path is None:
+        raise FileNotFoundError(name)
+    return pd.read_csv(path, parse_dates=list(dates))
 
 try:
     price = load("price")
@@ -98,9 +109,13 @@ try:
     declared = load("declared")
     gap = load("gap", dates=("quarter_end",))
     swiss = load("swiss")
-except FileNotFoundError:
-    st.error("No data found: upload declared.csv, etf.csv, gap.csv, price.csv "
-             "and swiss.csv to the repository (in a data folder or next to app.py).")
+except FileNotFoundError as missing:
+    seen = sorted(str(p.relative_to(HERE)) for p in HERE.rglob("*")
+                  if p.is_file() and ".git" not in p.parts)
+    st.error(f"Could not find {missing}.csv in the repository. Upload "
+             "declared.csv, etf.csv, gap.csv, price.csv and swiss.csv "
+             "(into a data folder or next to app.py).")
+    st.write("Files the app can see:", seen)
     st.stop()
 
 asof = {"price": price.date.max(), "etf": etf.date.max(),
