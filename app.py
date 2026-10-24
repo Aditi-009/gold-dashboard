@@ -84,7 +84,13 @@ pio.templates.default = "ledger"
 # ------------------------------------------------------------------ loading --
 @st.cache_data(ttl=3600)
 def load(name: str, dates=("date",)) -> pd.DataFrame:
-    return pd.read_csv(DATA / f"{name}.csv", parse_dates=list(dates))
+    # Look in data/ first, then next to app.py (in case the CSVs were
+    # uploaded to the top of the GitHub repository instead of data/).
+    for folder in (DATA, Path(__file__).parent):
+        path = folder / f"{name}.csv"
+        if path.exists():
+            return pd.read_csv(path, parse_dates=list(dates))
+    raise FileNotFoundError(name)
 
 try:
     price = load("price")
@@ -93,7 +99,8 @@ try:
     gap = load("gap", dates=("quarter_end",))
     swiss = load("swiss")
 except FileNotFoundError:
-    st.error("No data found. Run `python ingest.py --synthetic` first.")
+    st.error("No data found: upload declared.csv, etf.csv, gap.csv, price.csv "
+             "and swiss.csv to the repository (in a data folder or next to app.py).")
     st.stop()
 
 asof = {"price": price.date.max(), "etf": etf.date.max(),
